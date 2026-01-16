@@ -20,19 +20,38 @@ st.set_page_config(
 
 # --- 2. Shared Utilities (Fonts) ---
 def set_korean_font():
+    import matplotlib.font_manager as fm
+
     system_name = platform.system()
     if system_name == "Windows":
+        # Windows에서 한글 폰트 직접 지정
         font_path = "c:/Windows/Fonts/malgun.ttf"
-        try:
-            font_name = font_manager.FontProperties(fname=font_path).get_name()
-            rc('font', family=font_name)
-        except:
+        if os.path.exists(font_path):
+            fm.fontManager.addfont(font_path)
+            plt.rcParams['font.family'] = 'Malgun Gothic'
+        else:
             plt.rcParams['font.family'] = 'Malgun Gothic'
     elif system_name == "Darwin":
-        rc('font', family="AppleGothic")
+        plt.rcParams['font.family'] = 'AppleGothic'
     else:
-        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.family'] = 'NanumGothic'
+
     plt.rcParams['axes.unicode_minus'] = False
+
+    # 밝은 배경 설정 (가시성 개선)
+    plt.rcParams['figure.facecolor'] = 'white'
+    plt.rcParams['axes.facecolor'] = 'white'
+    plt.rcParams['savefig.facecolor'] = 'white'
+    plt.rcParams['axes.edgecolor'] = 'black'
+    plt.rcParams['axes.labelcolor'] = 'black'
+    plt.rcParams['xtick.color'] = 'black'
+    plt.rcParams['ytick.color'] = 'black'
+    plt.rcParams['text.color'] = 'black'
+
+    # seaborn 폰트 설정
+    sns.set_style("whitegrid")
+    sns.set_palette("bright")
+    sns.set(font='Malgun Gothic', rc={'axes.unicode_minus': False})
 
 set_korean_font()
 
