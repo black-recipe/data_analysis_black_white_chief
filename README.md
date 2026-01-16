@@ -97,3 +97,101 @@
 | **Streamlit** | 분석 결과를 접근 가능한 인터랙티브 웹 앱 형태로 제공하기 위해 사용|
 | **Supabase** | 데이터 저장소 |
 
+
+---
+
+## 4.  트러블 슈팅 (Problem Solving)
+
+• *문제 상황*: 크롤링이 원활하게 되지 않은 경우가 많았다.
+
+![image.png](image.png)
+
+1. 캐치테이블의 경우에는 스크롤을 내리려면 가운데 화면의 빈 공간에 마우스 클릭이 되어야만 스크롤이 가능하다.
+   하지만 셀레니움으로 크롤링을 할 때 이를 설정하지 않아서 데이터 수집이 안되었다. 
+    - 해결방법 : 현재 위의 사진에서 “135개의 매장 부분”에 마우스를 클릭하는 코드 추가
+    
+    ```python
+        try:
+                # 검증된 카드 셀렉터
+                cards = driver.find_elements(By.CSS_SELECTOR, "#main > div.container.gutter-sm > div > div > div > div")
+            except:
+                cards = []
+    ```
+
+3. 무한 스크롤 방식으로 웹이 만들어져 있으며 홈페이지 메모리 절약을 위해 스크롤이 많이 내려가면 그 이전 식당의 정보는 추출할 수 없다.
+    - 해결방법 : page down actions를 이용하여 스크롤이 많이 되지 않도록 설정하고 데이터를 조금씩 수집
+
+```python
+        try:
+            if cards:
+                last_card = cards[-1]
+                actions = ActionChains(driver)
+                actions.move_to_element(last_card).perform()
+                time.sleep(0.5)
+                actions.send_keys(Keys.PAGE_DOWN).pause(0.5).send_keys(Keys.PAGE_DOWN).perform()
+                time.sleep(1.5)
+            else:
+                driver.find_element(By.TAG_NAME, "body").send_keys(Keys.PAGE_DOWN)
+                time.sleep(1)
+        except:
+             driver.find_element(By.TAG_NAME, "body").send_keys(Keys.PAGE_DOWN)
+             
+```
+
+1. 식당 리뷰를 수집하기 위해서는 각각의 가게 사이트에 접근해야하지만 다들 형식이 달라서 자동화의 어려움이 있었음, 거기에 지도 시각화를 위한 경도, 위도가 필요했지만 이를 수집하는데 시간이 많이 걸릴 것으로 추측되었다.
+
+```markdown
+https://app.catchtable.co.kr/ct/shop/okdongsik?type=WAITING
+# 아래와 같은 사항들이 118개 모든 가게별로 다르게 설정되어 있어서 자동화가 어려움 
+
+# type=WAITING -> 웨이팅 여부
+# okdongsik -> 가게의 별명
+```
+
+- 해결방법 : html “미리보기”항목을 이용하여 정보가 있는 요소를 찾은 뒤 페이로드를 통해서 가게의 alias와 type을 수집할 수 있음을 확인
+- 아래의 사진을 보면 offset, size가 존재한다. 이 offset이 일정 규칙을 가지고 있어서 이를 가지고 자동화 수집이 가능하였다.
+
+![image.png](image%201.png)
+
+```markdown
+    if current_count == 0:
+        offset_str = "0"
+    else:
+        # 20:99:91-20:37:27-20:0:0 형식
+        offset_str = f"{current_count}:99:91-{current_count}:37:27-{current_count}:0:0"
+        
+    print(f"\n[데이터 {current_count}번부터 요청 중...] Offset: {offset_str}")
+    
+    payload = {
+        "paging": {"offset": offset_str, "size": 20},
+        "divideType": "NON_DIVIDE",
+        "curation": {"curationKey": TARGET_CURATION_KEY},
+        "sort": {"sortType": "recommended"},
+        "userInfo": {"clientGeoPoint": {"lat": 37.563398, "lon": 126.9863309}}
+    }
+
+```
+
+- 수집을 진행하고 나니 위도와 경도가 포함된 파일이 생성이 되어서 따로 가게의 위치 정보를 수집할 필요가 없어져 데이터 수집이 한층 수월했다.
+
+## 배운점
+
+- 셀레니움을 이용하면 모든 데이터가 수집이 가능할 줄 알았지만 약간의 제약사항들을 잘 지켜야 한다는 것을 깨달았다.
+- 겉으로 보이지 않는 데이터더라도 ‘개발자 도구’에서 요소들을 잘 찾아보면 필요한 데이터들이 수집이 가능하다.
+- AI Agent가 크롤링을 원활하게 할 수 있도록 프롬포트를 작성하기 위해서는 CSS SELECTOR 인자는 사용자가 지정을 해야지 디버깅 없이 빠르게 수집 코드를 작성할 수 있다는 것을 알았다.
+
+## ***6. 회고 및 결론 (Retrospective)***
+
+• *잘한 점* : 데이터를 너무 다양한 소스에서 수집을 하다보니 통합하는 과정에서 전처리 요구사항이 많았다. 특히 서울시 유동인구 데이터를 수집했을 때 주소가 영어로 적혀있어서 이를 한글로 바꾸는데제약사항이 많았으며 지도 맵핑이 수월하게 될지 걱정이였다. 하지만 전처리를 완료한 뒤 AI Agent를 이용하여 지도 시각화를 진행할 때 요구사항에 대한 프롬포트를 잘 작성했기에 지도 시각화가 아주 수월하게 가능했다.
+
+[서울시유동인구(IoT).md](%EC%84%9C%EC%9A%B8%EC%8B%9C%EC%9C%A0%EB%8F%99%EC%9D%B8%EA%B5%AC(IoT).md)
+
+![image.png](image%202.png)
+
+• *아쉬운 점 &* 개선 계획
+
+- 심사위원 합격 예측 분석을 진행 할 때 수집 데이터가 너무 적어서  실제로 쓸 만한 로지스틱 회귀분석이 모델이 나오지 못했다.
+- 흑백요리사1의 데이터도 수집을 하게 되서 이를 현재 데이터와 통합한다면 더욱 좋은 모델링을 만들고 유의미한 결과를 낼 수 있을 것 같다.
+- 상권분석을 위해서는 매출 데이터가 존재해야 더욱 낙수효과를 분석할 수 있을 것 같은데 매출 데이터는 신한카드로 한정이 되어있어서 제대로된 낙수효과를 측정하지 못한게 아쉽다.
+- ‘행정동’ 단위가 아닌 ‘동’단위로 분석을 했으면 낙수효과를 제대로 측정이 가능했을 텐데 행정동 단위로 밖에 수집이 안되어서 아쉬웠다.
+- 데이터 라벨링을 수기로 작성해야 하는데 사람 기준에 따라 애매하게 요리들이 존재하여 정확한 라벨링이 불가능해 아쉬웠다.
