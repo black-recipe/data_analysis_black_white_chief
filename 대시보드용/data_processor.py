@@ -99,7 +99,7 @@ def load_reviews() -> pd.DataFrame:
     if not dfs:
         return pd.DataFrame()
 
-    df = pd.concat(dfs, ignore_index=True)
+    df = pd.concat(dfs, ignore_index=True) 
 
     # 중복 제거 (restaurant, reviewer, review_date 기준)
     df = df.drop_duplicates(subset=['restaurant', 'reviewer', 'review_date'], keep='first')
