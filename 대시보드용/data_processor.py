@@ -15,11 +15,34 @@ BROADCAST_DATES = [
     '2026-01-13',  # 5회
 ]
 
-# 데이터 경로
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REVIEWS_PATH = os.path.join(BASE_DIR, 'reviews_collected_20260114.csv')
-POPULATION_PATH = os.path.join(BASE_DIR, 'seoul_floating_pop_raw3.csv')
-RESTAURANT_PATH = os.path.join(BASE_DIR, '캐치테이블_가게정보.csv')
+# 데이터 경로 설정 (Streamlit Cloud 호환)
+# 현재 스크립트 위치 기준
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 상위 폴더 (로컬 환경용)
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+# data 폴더 (Streamlit Cloud 배포용)
+DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
+
+def get_data_path(filename):
+    """데이터 파일 경로 찾기 (data/ 폴더 우선, 없으면 상위 폴더)"""
+    # 1순위: 대시보드용/data/ 폴더
+    data_folder_path = os.path.join(DATA_DIR, filename)
+    if os.path.exists(data_folder_path):
+        return data_folder_path
+    # 2순위: 상위 폴더 (로컬)
+    parent_path = os.path.join(PARENT_DIR, filename)
+    if os.path.exists(parent_path):
+        return parent_path
+    # 3순위: 현재 폴더
+    current_path = os.path.join(SCRIPT_DIR, filename)
+    if os.path.exists(current_path):
+        return current_path
+    # 없으면 기본값 반환 (에러 발생 예정)
+    return data_folder_path
+
+REVIEWS_PATH = get_data_path('reviews_collected_20260114.csv')
+POPULATION_PATH = get_data_path('seoul_floating_pop_raw3.csv')
+RESTAURANT_PATH = get_data_path('캐치테이블_가게정보.csv')
 
 
 def load_reviews() -> pd.DataFrame:

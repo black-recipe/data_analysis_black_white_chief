@@ -12,10 +12,34 @@ import platform
 import matplotlib.pyplot as plt
 import seaborn as sns
 import statsmodels.api as sm
+
+# 한글 폰트 자동 설정 (Streamlit Cloud용)
+try:
+    import koreanize_matplotlib
+except ImportError:
+    pass
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # 모듈 경로 추가
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(SCRIPT_DIR)
+
+# 데이터 경로 헬퍼 함수 (Streamlit Cloud 호환)
+def get_data_path(filename):
+    """데이터 파일 경로 찾기"""
+    # 1순위: data/ 폴더
+    data_path = os.path.join(SCRIPT_DIR, 'data', filename)
+    if os.path.exists(data_path):
+        return data_path
+    # 2순위: 상위 폴더
+    parent_path = os.path.join(os.path.dirname(SCRIPT_DIR), filename)
+    if os.path.exists(parent_path):
+        return parent_path
+    # 3순위: 현재 폴더
+    current_path = os.path.join(SCRIPT_DIR, filename)
+    if os.path.exists(current_path):
+        return current_path
+    return data_path  # 기본값
 
 from data_processor import (
     load_reviews, 
@@ -37,24 +61,37 @@ from population_animated_map import (
     create_static_choropleth
 )
 
-# === 한글 폰트 설정 ===
+# === 한글 폰트 설정 (Streamlit Cloud 호환) ===
 def set_korean_font():
-    """한글 폰트 설정 (Windows 환경 최적화)"""
+    """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
     import matplotlib.font_manager as fm
 
     system_name = platform.system()
+    font_set = False
+    
     if system_name == "Windows":
-        # Windows에서 한글 폰트 직접 지정
         font_path = "c:/Windows/Fonts/malgun.ttf"
         if os.path.exists(font_path):
             fm.fontManager.addfont(font_path)
             plt.rcParams['font.family'] = 'Malgun Gothic'
-        else:
-            plt.rcParams['font.family'] = 'Malgun Gothic'
+            font_set = True
     elif system_name == "Darwin":
         plt.rcParams['font.family'] = 'AppleGothic'
-    else:
-        plt.rcParams['font.family'] = 'NanumGothic'
+        font_set = True
+    
+    # Linux (Streamlit Cloud) - 여러 폰트 시도
+    if not font_set:
+        available_fonts = [f.name for f in fm.fontManager.ttflist]
+        korean_fonts = ['NanumGothic', 'Nanum Gothic', 'NanumBarunGothic', 
+                       'Noto Sans CJK KR', 'DejaVu Sans']
+        for kf in korean_fonts:
+            if kf in available_fonts:
+                plt.rcParams['font.family'] = kf
+                font_set = True
+                break
+        if not font_set:
+            # 폰트가 없으면 기본값 사용 (한글 깨질 수 있음)
+            plt.rcParams['font.family'] = 'DejaVu Sans'
 
     plt.rcParams['axes.unicode_minus'] = False
 
@@ -68,10 +105,13 @@ def set_korean_font():
     plt.rcParams['ytick.color'] = 'black'
     plt.rcParams['text.color'] = 'black'
 
-    # seaborn 폰트 설정
+    # seaborn 설정
     sns.set_style("whitegrid")
     sns.set_palette("bright")
-    sns.set(font='Malgun Gothic', rc={'axes.unicode_minus': False})
+    try:
+        sns.set(font=plt.rcParams['font.family'], rc={'axes.unicode_minus': False})
+    except:
+        sns.set(rc={'axes.unicode_minus': False})
 
 set_korean_font()
 
@@ -128,7 +168,7 @@ def load_all_data():
 @st.cache_data
 def load_survival_data():
     """서바이벌 데이터 로드"""
-    file_path = '../셰프서바이벌결과요약.csv'
+    file_path = get_data_path('셰프서바이벌결과요약.csv')
     if not os.path.exists(file_path):
         return None
     df = pd.read_csv(file_path)
@@ -138,7 +178,7 @@ def load_survival_data():
 @st.cache_data
 def load_genre_survival_data():
     """요리 장르별 생존율 데이터"""
-    file_path = '../3번문제완성본.csv'
+    file_path = get_data_path('3번문제완성본.csv')
     if not os.path.exists(file_path):
         return None
     df = pd.read_csv(file_path)
@@ -152,7 +192,7 @@ def load_genre_survival_data():
 @st.cache_data
 def load_chef_survival_data():
     """쉐프 생존여부 데이터 로드"""
-    file_path = '../쉐프생존여부.csv'
+    file_path = get_data_path('쉐프생존여부.csv')
     if not os.path.exists(file_path):
         return None
     df = pd.read_csv(file_path, encoding='utf-8')
@@ -224,7 +264,10 @@ def create_summary_df(model):
 
 def load_trend_data():
     """트렌드 데이터 로드"""
-    base_path = r"c:\Users\USER\Documents\웅진씽크빅kdt\흑백요리사\흑백요리사트렌드추이"
+    # 트렌드 데이터 폴더 찾기 (data/흑백요리사트렌드추이 또는 상위폴더/흑백요리사트렌드추이)
+    base_path = os.path.join(SCRIPT_DIR, 'data', '흑백요리사트렌드추이')
+    if not os.path.exists(base_path):
+        base_path = os.path.join(os.path.dirname(SCRIPT_DIR), '흑백요리사트렌드추이')
     if not os.path.exists(base_path):
         return pd.DataFrame()
 
