@@ -688,34 +688,13 @@ def main():
     elif menu == "📊 방송효과분석":
         st.markdown('<p class="main-header">📊 흑백요리사 방송 효과 분석</p>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">방영일 기준 7일 전후 리뷰 및 유동인구 변화</p>', unsafe_allow_html=True)
-        
+
         with st.spinner("데이터 로드 중..."):
             reviews, population, restaurants = load_all_data()
             review_changes = calculate_review_changes(reviews)
             daily_pop = get_daily_population_by_district(population)
             geojson = get_geojson()
-        
-        # 사이드바 필터
-        st.sidebar.subheader("📅 필터 옵션")
-        episode_labels = {
-            1: "1회 (12/16)", 2: "2회 (12/23)", 3: "3회 (12/30)",
-            4: "4회 (1/6)", 5: "5회 (1/13)"
-        }
-        selected_episode = st.sidebar.selectbox(
-            "방영 회차 선택",
-            options=list(episode_labels.keys()),
-            format_func=lambda x: episode_labels[x],
-            index=0
-        )
-        
-        all_dates = sorted(daily_pop['date'].unique())
-        date_range = st.sidebar.date_input(
-            "분석 기간",
-            value=(all_dates[0], all_dates[-1]),
-            min_value=all_dates[0],
-            max_value=all_dates[-1]
-        )
-        
+
         # 탭
         tab1, tab2, tab3 = st.tabs(["📊 리뷰 히트맵", "🗺️ 유동인구 지도", "📈 가게 분석"])
         
@@ -727,6 +706,19 @@ def main():
             리뷰 증가율과 증가 수를 시각화했습니다. 색이 진할수록 리뷰 증가가 많았던 가게입니다.
             """)
 
+            # 필터: 방영 회차 선택
+            episode_labels = {
+                1: "1회 (12/16)", 2: "2회 (12/23)", 3: "3회 (12/30)",
+                4: "4회 (1/6)", 5: "5회 (1/13)"
+            }
+            selected_episode_tab1 = st.selectbox(
+                "방영 회차 선택 (TOP 10용)",
+                options=list(episode_labels.keys()),
+                format_func=lambda x: episode_labels[x],
+                index=0,
+                key="episode_tab1"
+            )
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("분석 가게", len(review_changes['restaurant'].unique()))
@@ -734,21 +726,21 @@ def main():
                 st.metric("평균 증가율", f"{review_changes['change_rate'].mean():.1f}%")
             with col3:
                 st.metric("최대 증가율", f"{review_changes['change_rate'].max():.1f}%")
-            
+
             st.divider()
-            
+
             value_option = st.radio(
                 "표시 값",
                 options=['change_rate', 'change_count'],
                 format_func=lambda x: '증가율 (%)' if x == 'change_rate' else '증가 수',
                 horizontal=True
             )
-            
+
             fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option)
             st.plotly_chart(fig_heatmap, use_container_width=True)
-            
+
             st.subheader("🏆 리뷰 증가율 TOP 10")
-            top10 = get_top_restaurants_by_change(review_changes, episode=selected_episode, top_n=10)
+            top10 = get_top_restaurants_by_change(review_changes, episode=selected_episode_tab1, top_n=10)
             st.dataframe(
                 top10[['restaurant', 'change_rate', 'before_count', 'after_count']].rename(columns={
                     'restaurant': '가게명', 'change_rate': '증가율 (%)',
@@ -775,26 +767,56 @@ def main():
                     'comparison': '📊 변화율 지도',
                     'static': '📍 특정 날짜'
                 }[x],
-                horizontal=True
+                horizontal=True,
+                key="map_type_tab2"
             )
-            
+
             if map_type == 'animation':
                 st.info("▶ 재생 버튼을 눌러 일별 유동인구 변화를 확인하세요.")
+
+                # 애니메이션용 날짜 범위 필터
+                all_dates = sorted(daily_pop['date'].unique())
+                date_range_tab2 = st.date_input(
+                    "분석 기간",
+                    value=(all_dates[0], all_dates[-1]),
+                    min_value=all_dates[0],
+                    max_value=all_dates[-1],
+                    key="date_range_tab2"
+                )
+
                 with st.spinner("애니메이션 지도 생성 중..."):
-                    start_str = date_range[0].strftime('%Y-%m-%d') if isinstance(date_range, tuple) else str(date_range[0])
-                    end_str = date_range[1].strftime('%Y-%m-%d') if isinstance(date_range, tuple) and len(date_range) > 1 else str(date_range[-1])
+                    start_str = date_range_tab2[0].strftime('%Y-%m-%d') if isinstance(date_range_tab2, tuple) else str(date_range_tab2[0])
+                    end_str = date_range_tab2[1].strftime('%Y-%m-%d') if isinstance(date_range_tab2, tuple) and len(date_range_tab2) > 1 else str(date_range_tab2[-1])
                     fig_map = create_animated_population_map(daily_pop, restaurants, geojson, start_date=start_str, end_date=end_str)
                     st.plotly_chart(fig_map, use_container_width=True)
-            
+
             elif map_type == 'comparison':
-                broadcast_date = BROADCAST_DATES[selected_episode - 1]
+                # 방영 회차 선택
+                episode_labels_tab2 = {
+                    1: "1회 (12/16)", 2: "2회 (12/23)", 3: "3회 (12/30)",
+                    4: "4회 (1/6)", 5: "5회 (1/13)"
+                }
+                selected_episode_tab2 = st.selectbox(
+                    "방영 회차 선택",
+                    options=list(episode_labels_tab2.keys()),
+                    format_func=lambda x: episode_labels_tab2[x],
+                    index=0,
+                    key="episode_tab2"
+                )
+
+                broadcast_date = BROADCAST_DATES[selected_episode_tab2 - 1]
                 st.info(f"📊 방영일 {broadcast_date} 기준 7일 전후 변화율")
                 fig_comp = create_broadcast_comparison_map(population, restaurants, broadcast_date, geojson)
                 st.plotly_chart(fig_comp, use_container_width=True)
-            
+
             else:
-                selected_date = st.date_input("날짜 선택", value=pd.to_datetime(BROADCAST_DATES[selected_episode - 1]))
-                fig_static = create_static_choropleth(population, restaurants, str(selected_date), geojson)
+                # 특정 날짜 선택
+                selected_date_tab2 = st.date_input(
+                    "날짜 선택",
+                    value=pd.to_datetime(BROADCAST_DATES[0]),
+                    key="date_tab2"
+                )
+                fig_static = create_static_choropleth(population, restaurants, str(selected_date_tab2), geojson)
                 st.plotly_chart(fig_static, use_container_width=True)
             
             st.subheader("★ 흑백요리사 출연 가게")
