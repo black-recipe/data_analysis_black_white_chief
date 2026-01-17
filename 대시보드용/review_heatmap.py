@@ -144,10 +144,15 @@ def create_review_bar_chart(
         textposition='outside'
     ))
     
+    # Y축 최대값에 여유 공간 추가 (텍스트가 잘리지 않도록)
+    max_value = max(df['before_count'].max(), df['after_count'].max())
+    y_range = [0, max_value * 1.15]  # 15% 여유 공간
+
     fig.update_layout(
         title=f'{selected_restaurant} - 방영 전후 리뷰 수 비교',
         xaxis_title='방영 회차',
         yaxis_title='리뷰 수',
+        yaxis=dict(range=y_range),
         barmode='group',
         legend=dict(
             orientation='h',
@@ -156,7 +161,8 @@ def create_review_bar_chart(
             xanchor='right',
             x=1
         ),
-        height=400
+        height=500,
+        margin=dict(l=60, r=40, t=80, b=60)
     )
     
     return fig
