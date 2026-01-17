@@ -61,24 +61,39 @@ def create_review_heatmap(
     pivot = pivot.fillna(0)
     
     # 히트맵 생성 - RdBu 색상으로 명확하게
+    # 표시 형식 결정 (증가율이면 %, 증가 수면 개수)
+    if value_column == 'change_rate':
+        text_display = [[f"{int(v)}%" for v in row] for row in pivot.values]
+        hover_template = '<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>'
+        colorbar_title = '증가율 (%)'
+        colorbar_tickvals = [-100, -50, 0, 50, 100, 150]
+        colorbar_ticktext = ['-100%', '-50%', '0%', '+50%', '+100%', '+150%']
+    else:
+        text_display = [[f"{int(v)}" for v in row] for row in pivot.values]
+        hover_template = '<b>%{y}</b><br>%{x}: %{z:.0f}개<extra></extra>'
+        colorbar_title = '증가 수 (개)'
+        max_count = int(pivot.values.max())
+        colorbar_tickvals = [0, max_count//2, max_count]
+        colorbar_ticktext = ['0', f'{max_count//2}', f'{max_count}']
+
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
         x=pivot.columns,
         y=pivot.index,
         colorscale='RdBu_r',  # 빨강-흰색-파랑 (역순이라 빨강=증가)
         zmid=0,
-        zmin=clip_range[0],
-        zmax=clip_range[1],
-        text=[[f"{int(v)}%" for v in row] for row in pivot.values],
+        zmin=clip_range[0] if value_column == 'change_rate' else 0,
+        zmax=clip_range[1] if value_column == 'change_rate' else None,
+        text=text_display,
         texttemplate='%{text}',
         textfont={"size": 10, "color": "black"},
         hoverongaps=False,
-        hovertemplate='<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>',
+        hovertemplate=hover_template,
         colorbar=dict(
-            title='증가율 (%)',
+            title=colorbar_title,
             thickness=15,
-            tickvals=[-100, -50, 0, 50, 100, 150],
-            ticktext=['-100%', '-50%', '0%', '+50%', '+100%', '+150%']
+            tickvals=colorbar_tickvals,
+            ticktext=colorbar_ticktext
         )
     ))
     

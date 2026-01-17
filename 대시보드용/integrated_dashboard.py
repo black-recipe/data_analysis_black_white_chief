@@ -736,6 +736,12 @@ def main():
                 horizontal=True
             )
 
+            # 계산 공식 설명
+            if value_option == 'change_rate':
+                st.caption("📐 **계산 공식**: (방영 후 리뷰 수 - 방영 전 리뷰 수) ÷ 방영 전 리뷰 수 × 100 → 상대적 성장률을 보여줍니다")
+            else:
+                st.caption("📐 **계산 공식**: 방영 후 리뷰 수 - 방영 전 리뷰 수 → 실제로 늘어난 리뷰 개수를 보여줍니다")
+
             fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option)
             st.plotly_chart(fig_heatmap, use_container_width=True)
 
