@@ -784,7 +784,8 @@ def main():
                 "표시 값",
                 options=['change_rate', 'change_count'],
                 format_func=lambda x: '증가율 (%)' if x == 'change_rate' else '증가 수',
-                horizontal=True
+                horizontal=True,
+                key="value_option_tab1"
             )
 
             # 계산 공식 설명
@@ -890,7 +891,7 @@ def main():
             """)
 
             all_restaurants = sorted(review_changes['restaurant'].unique())
-            selected_restaurant = st.selectbox("가게 선택", options=all_restaurants)
+            selected_restaurant = st.selectbox("가게 선택", options=all_restaurants, key="restaurant_tab3")
             
             if selected_restaurant:
                 rest_info = restaurants[restaurants['restaurant'] == selected_restaurant]
