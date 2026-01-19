@@ -692,6 +692,7 @@ def main():
                                 line_kws={'color': 'red'}, scatter_kws={'alpha': 0.5}, ax=ax)
                     ax.set_title("Residuals vs Fitted (안성재)")
                     ax.axhline(0, color='blue', linestyle='--')
+                    ax.set_ylim(-4, 4)  # 극단적 이상치 시각화 방지
                     st.pyplot(fig_res)
                     st.caption("🔎 **그래프 보는 법**: 빨간 실선(데이터 추세)이 파란 점선(0)에 가깝고 평평할수록, 모델이 데이터를 편향 없이 잘 설명하고 있다는 뜻입니다.")
 
@@ -719,6 +720,7 @@ def main():
                                 line_kws={'color': 'red'}, scatter_kws={'alpha': 0.5}, ax=ax_b)
                     ax_b.set_title("Residuals vs Fitted (백종원)")
                     ax_b.axhline(0, color='blue', linestyle='--')
+                    ax_b.set_ylim(-4, 4)  # 극단적 이상치 시각화 방지
                     st.pyplot(fig_res_b)
                     st.caption("🔎 **그래프 보는 법**: 데이터들(점들)이 위아래로 고르게 퍼져 있어야 좋은 모델입니다. 특정 패턴이 보이면 모델 개선이 필요할 수 있습니다.")
 
