@@ -1,11 +1,13 @@
 """
 흑백요리사2 - 캐치테이블 리뷰 자동 수집 및 Supabase 적재 DAG
+Airflow 3.0+ 호환 버전
 """
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.hooks.base import BaseHook
+from airflow.models import Variable
 import requests
 import pandas as pd
 import os
@@ -246,8 +248,159 @@ def save_daily_snapshot(**context):
     return None
 
 
+def ensure_table_exists(**context):
+    """Supabase(PostgreSQL)에 catchtable_reviews 테이블이 없으면 생성"""
+    print("=== Checking/Creating catchtable_reviews Table ===")
+    
+    # Airflow Connection에서 Supabase 정보 가져오기
+    conn = BaseHook.get_connection(SUPABASE_CONN_ID)
+    
+    # Connection 정보 출력 (디버깅용)
+    print(f"[Info] Connection ID: {SUPABASE_CONN_ID}")
+    print(f"[Info] Host: {conn.host}")
+    
+    # Supabase REST API로 테이블 존재 확인
+    supabase_url = conn.host if conn.host.startswith('http') else f"https://{conn.host}"
+    supabase_key = conn.password
+    
+    check_url = f"{supabase_url}/rest/v1/{SUPABASE_TABLE}?limit=0"
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+    }
+    
+    try:
+        response = requests.get(check_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            print(f"[Info] Table '{SUPABASE_TABLE}' already exists")
+            return True
+        else:
+            print(f"[Info] Table check response: {response.status_code}")
+            print(f"[Info] Response: {response.text[:500] if response.text else 'empty'}")
+            
+    except Exception as e:
+        print(f"[Warning] Table check failed: {e}")
+    
+    # 테이블이 없거나 확인 실패 시 - PostgreSQL 직접 연결 시도
+    print("[Info] Attempting to create table via PostgreSQL direct connection...")
+    
+    # Extra에서 PostgreSQL 연결 정보 파싱
+    extra = {}
+    if conn.extra:
+        try:
+            extra = json.loads(conn.extra)
+        except:
+            pass
+    
+    # PostgreSQL 연결 정보 구성
+    db_host = extra.get('db_host') or extra.get('postgres_host')
+    db_port = extra.get('db_port', 5432) or conn.port or 5432
+    db_name = extra.get('db_name', 'postgres') or conn.schema or 'postgres'
+    db_user = extra.get('db_user', 'postgres') or conn.login or 'postgres'
+    db_password = extra.get('db_password') or conn.password
+    
+    # host에서 DB host 추출 시도
+    if not db_host and conn.host:
+        host = conn.host.replace('https://', '').replace('http://', '')
+        if '.supabase.co' in host:
+            project_ref = host.split('.')[0]
+            db_host = f"db.{project_ref}.supabase.co"
+            print(f"[Info] Derived DB host: {db_host}")
+    
+    if not db_host:
+        print("[Error] PostgreSQL host not found in connection")
+        print_catchtable_create_sql()
+        return False
+    
+    # PostgreSQL 연결 시도
+    try:
+        import psycopg2
+        
+        print(f"[Info] Connecting to PostgreSQL: {db_host}:{db_port}/{db_name}")
+        
+        pg_conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            sslmode='require'
+        )
+        
+        cursor = pg_conn.cursor()
+        
+        # 테이블 생성 SQL
+        create_sql = '''
+        CREATE TABLE IF NOT EXISTS catchtable_reviews (
+            id BIGSERIAL PRIMARY KEY,
+            restaurant_name VARCHAR(200) NOT NULL,
+            chef_info VARCHAR(100),
+            category VARCHAR(100),
+            review_count INTEGER DEFAULT 0,
+            previous_count INTEGER DEFAULT 0,
+            change_count INTEGER DEFAULT 0,
+            collected_at TIMESTAMP NOT NULL,
+            url TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_reviews_restaurant 
+            ON catchtable_reviews(restaurant_name);
+        CREATE INDEX IF NOT EXISTS idx_reviews_collected_at 
+            ON catchtable_reviews(collected_at);
+        CREATE INDEX IF NOT EXISTS idx_reviews_chef 
+            ON catchtable_reviews(chef_info);
+        '''
+        
+        cursor.execute(create_sql)
+        pg_conn.commit()
+        
+        cursor.close()
+        pg_conn.close()
+        
+        print(f"[Success] Table '{SUPABASE_TABLE}' created successfully!")
+        return True
+        
+    except ImportError:
+        print("[Warning] psycopg2 not installed.")
+        print_catchtable_create_sql()
+        return False
+        
+    except Exception as e:
+        print(f"[Error] PostgreSQL connection failed: {e}")
+        print_catchtable_create_sql()
+        return False
+
+
+def print_catchtable_create_sql():
+    """테이블 생성 SQL 출력"""
+    sql = '''
+    -- Supabase SQL Editor에서 실행하세요:
+    
+    CREATE TABLE IF NOT EXISTS catchtable_reviews (
+        id BIGSERIAL PRIMARY KEY,
+        restaurant_name VARCHAR(200) NOT NULL,
+        chef_info VARCHAR(100),
+        category VARCHAR(100),
+        review_count INTEGER DEFAULT 0,
+        previous_count INTEGER DEFAULT 0,
+        change_count INTEGER DEFAULT 0,
+        collected_at TIMESTAMP NOT NULL,
+        url TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_reviews_restaurant 
+        ON catchtable_reviews(restaurant_name);
+    CREATE INDEX IF NOT EXISTS idx_reviews_collected_at 
+        ON catchtable_reviews(collected_at);
+    '''
+    print(sql)
+
+
 # ==============================================================================
-# DAG Definition
+# DAG Definition (Airflow 3.0+)
 # ==============================================================================
 default_args = {
     'owner': 'airflow',
@@ -262,7 +415,7 @@ with DAG(
     dag_id='catchtable_review_collector',
     default_args=default_args,
     description='캐치테이블 리뷰 수집 및 Supabase 적재',
-    schedule_interval='0 6 * * *',  # 매일 오전 6시 실행
+    schedule='0 6 * * *',  # 매일 오전 6시 실행 (Airflow 3.0+)
     start_date=datetime(2026, 1, 15),
     catchup=False,
     tags=['흑백요리사', '리뷰', '캐치테이블', 'Supabase'],
@@ -270,24 +423,26 @@ with DAG(
     
     start = EmptyOperator(task_id='start')
     
+    ensure_table = PythonOperator(
+        task_id='ensure_table_exists',
+        python_callable=ensure_table_exists,
+    )
+    
     collect_review_data = PythonOperator(
         task_id='collect_reviews',
         python_callable=collect_reviews,
-        provide_context=True,
     )
     
     load_supabase = PythonOperator(
         task_id='load_reviews_to_supabase',
         python_callable=load_reviews_to_supabase,
-        provide_context=True,
     )
     
     save_snapshot = PythonOperator(
         task_id='save_daily_snapshot',
         python_callable=save_daily_snapshot,
-        provide_context=True,
     )
     
     end = EmptyOperator(task_id='end')
     
-    start >> collect_review_data >> load_supabase >> save_snapshot >> end
+    start >> ensure_table >> collect_review_data >> load_supabase >> save_snapshot >> end

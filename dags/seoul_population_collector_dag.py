@@ -1,11 +1,13 @@
 """
 흑백요리사2 - 서울시 유동인구 자동 수집 및 Supabase 적재 DAG
+Airflow 3.0+ 호환 버전
 """
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.hooks.base import BaseHook
+from airflow.models import Variable
 import requests
 import pandas as pd
 import os
@@ -19,7 +21,6 @@ SERVICE = "IotVdata018"
 BASE_URL = "http://openapi.seoul.go.kr:8088/{key}/json/{service}/{start}/{end}/"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_FILE = os.path.join(BASE_DIR, "seoul_floating_pop_raw3.csv")
-SEOUL_API_CONN_ID = "seoul_api"  # Seoul API Key Connection
 SUPABASE_CONN_ID = "xoosl033110_supabase_conn"
 SUPABASE_TABLE = "seoul_floating_population"
 
@@ -37,10 +38,8 @@ GU_MAPPING = {
 
 
 def get_seoul_api_key():
-    """Airflow Connection에서 Seoul API Key 가져오기"""
-    conn = BaseHook.get_connection(SEOUL_API_CONN_ID)
-    # password 또는 extra에서 API Key 추출
-    return conn.password or conn.extra
+    """Airflow Variable에서 Seoul API Key 가져오기"""
+    return Variable.get('seoul_api')
 
 
 def get_supabase_credentials():
@@ -96,22 +95,53 @@ def fetch_data_batch(api_key, start_idx, end_idx, retries=3):
 
 
 def get_latest_collected_time():
-    """기존 파일에서 최신 수집 시간 조회"""
-    if not os.path.exists(OUTPUT_FILE):
-        return datetime(2025, 12, 9)
+    """Supabase 또는 로컬 파일에서 최신 수집 시간 조회"""
     
+    # 1. 먼저 Supabase에서 최신 시간 조회 시도
     try:
-        df = pd.read_csv(OUTPUT_FILE, usecols=['SENSING_TIME'])
-        if df.empty:
-            return datetime(2025, 12, 9)
+        supabase_url, supabase_key = get_supabase_credentials()
         
-        df['SENSING_TIME'] = pd.to_datetime(df['SENSING_TIME'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
-        max_time = df['SENSING_TIME'].max()
+        # 최신 sensing_time 조회 (내림차순 정렬, 1개만)
+        query_url = f"{supabase_url}/rest/v1/{SUPABASE_TABLE}?select=sensing_time&order=sensing_time.desc&limit=1"
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+        }
         
-        return max_time if pd.notna(max_time) else datetime(2025, 12, 9)
+        response = requests.get(query_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                latest_time_str = data[0].get('sensing_time')
+                if latest_time_str:
+                    latest_time = pd.to_datetime(latest_time_str)
+                    print(f"[Info] Latest time from Supabase: {latest_time}")
+                    return latest_time
+            print("[Info] Supabase table is empty, starting from 2025-12-09")
+        else:
+            print(f"[Warning] Supabase query failed: {response.status_code}")
+            
     except Exception as e:
-        print(f"[Warning] Could not read existing file: {e}")
-        return datetime(2025, 12, 9)
+        print(f"[Warning] Could not query Supabase: {e}")
+    
+    # 2. Supabase 실패 시 로컬 파일 확인 (fallback)
+    if os.path.exists(OUTPUT_FILE):
+        try:
+            df = pd.read_csv(OUTPUT_FILE, usecols=['SENSING_TIME'])
+            if not df.empty:
+                df['SENSING_TIME'] = pd.to_datetime(df['SENSING_TIME'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
+                max_time = df['SENSING_TIME'].max()
+                if pd.notna(max_time):
+                    print(f"[Info] Latest time from local CSV: {max_time}")
+                    return max_time
+        except Exception as e:
+            print(f"[Warning] Could not read local file: {e}")
+    
+    # 3. 둘 다 실패 시 기본값 (2025-12-09부터 수집)
+    default_time = datetime(2025, 12, 9)
+    print(f"[Info] Using default start time: {default_time}")
+    return default_time
 
 
 def collect_population_data(**context):
@@ -120,7 +150,7 @@ def collect_population_data(**context):
     
     # Seoul API Key 가져오기
     api_key = get_seoul_api_key()
-    print(f"[Info] Seoul API Key loaded from Airflow Connection")
+    print(f"[Info] Seoul API Key loaded from Airflow Variable")
     
     last_collected_time = get_latest_collected_time()
     print(f"Latest collected time: {last_collected_time}")
@@ -137,7 +167,7 @@ def collect_population_data(**context):
     
     for batch_num in range(max_batches):
         end_idx = start_idx + batch_size - 1
-        rows = fetch_data_batch(api_key, start_idx, end_idx)  # api_key 전달
+        rows = fetch_data_batch(api_key, start_idx, end_idx)
         
         if not rows:
             print(f"[Info] No more data at index {start_idx}")
@@ -255,8 +285,154 @@ def load_to_supabase(**context):
     return inserted_count
 
 
+def ensure_table_exists(**context):
+    """Supabase(PostgreSQL)에 테이블이 없으면 생성"""
+    print("=== Checking/Creating Supabase Table ===")
+    
+    # Airflow Connection에서 Supabase 정보 가져오기
+    conn = BaseHook.get_connection(SUPABASE_CONN_ID)
+    
+    # Connection 정보 출력 (디버깅용)
+    print(f"[Info] Connection ID: {SUPABASE_CONN_ID}")
+    print(f"[Info] Host: {conn.host}")
+    print(f"[Info] Schema: {conn.schema}")
+    print(f"[Info] Login: {conn.login}")
+    print(f"[Info] Port: {conn.port}")
+    
+    # Supabase REST API로 테이블 존재 확인
+    supabase_url = conn.host if conn.host.startswith('http') else f"https://{conn.host}"
+    supabase_key = conn.password
+    
+    check_url = f"{supabase_url}/rest/v1/{SUPABASE_TABLE}?limit=0"
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+    }
+    
+    try:
+        response = requests.get(check_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            print(f"[Info] Table '{SUPABASE_TABLE}' already exists")
+            return True
+        else:
+            print(f"[Info] Table check response: {response.status_code}")
+            print(f"[Info] Response: {response.text[:500] if response.text else 'empty'}")
+            
+    except Exception as e:
+        print(f"[Warning] Table check failed: {e}")
+    
+    # 테이블이 없거나 확인 실패 시 - PostgreSQL 직접 연결 시도
+    print("[Info] Attempting to create table via PostgreSQL direct connection...")
+    
+    # Extra에서 PostgreSQL 연결 정보 파싱
+    extra = {}
+    if conn.extra:
+        try:
+            extra = json.loads(conn.extra)
+        except:
+            pass
+    
+    # PostgreSQL 연결 정보 구성
+    db_host = extra.get('db_host') or extra.get('postgres_host')
+    db_port = extra.get('db_port', 5432) or conn.port or 5432
+    db_name = extra.get('db_name', 'postgres') or conn.schema or 'postgres'
+    db_user = extra.get('db_user', 'postgres') or conn.login or 'postgres'
+    db_password = extra.get('db_password') or conn.password
+    
+    # host에서 DB host 추출 시도 (https://xxx.supabase.co -> db.xxx.supabase.co)
+    if not db_host and conn.host:
+        host = conn.host.replace('https://', '').replace('http://', '')
+        if '.supabase.co' in host:
+            project_ref = host.split('.')[0]
+            db_host = f"db.{project_ref}.supabase.co"
+            print(f"[Info] Derived DB host: {db_host}")
+    
+    if not db_host:
+        print("[Error] PostgreSQL host not found in connection")
+        print_create_table_sql()
+        return False
+    
+    # PostgreSQL 연결 시도
+    try:
+        import psycopg2
+        
+        print(f"[Info] Connecting to PostgreSQL: {db_host}:{db_port}/{db_name}")
+        
+        pg_conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            sslmode='require'
+        )
+        
+        cursor = pg_conn.cursor()
+        
+        # 테이블 생성 SQL
+        create_sql = '''
+        CREATE TABLE IF NOT EXISTS seoul_floating_population (
+            id BIGSERIAL PRIMARY KEY,
+            sensing_time TIMESTAMP NOT NULL,
+            autonomous_district VARCHAR(50) NOT NULL,
+            administrative_district VARCHAR(100),
+            visitor_count INTEGER DEFAULT 0,
+            reg_dttm VARCHAR(50),
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_pop_sensing_time 
+            ON seoul_floating_population(sensing_time);
+        CREATE INDEX IF NOT EXISTS idx_pop_district 
+            ON seoul_floating_population(autonomous_district);
+        '''
+        
+        cursor.execute(create_sql)
+        pg_conn.commit()
+        
+        cursor.close()
+        pg_conn.close()
+        
+        print(f"[Success] Table '{SUPABASE_TABLE}' created successfully!")
+        return True
+        
+    except ImportError:
+        print("[Warning] psycopg2 not installed. Cannot connect to PostgreSQL directly.")
+        print_create_table_sql()
+        return False
+        
+    except Exception as e:
+        print(f"[Error] PostgreSQL connection failed: {e}")
+        print_create_table_sql()
+        return False
+
+
+def print_create_table_sql():
+    """테이블 생성 SQL 출력"""
+    sql = '''
+    -- Supabase SQL Editor에서 실행하세요:
+    
+    CREATE TABLE IF NOT EXISTS seoul_floating_population (
+        id BIGSERIAL PRIMARY KEY,
+        sensing_time TIMESTAMP NOT NULL,
+        autonomous_district VARCHAR(50) NOT NULL,
+        administrative_district VARCHAR(100),
+        visitor_count INTEGER DEFAULT 0,
+        reg_dttm VARCHAR(50),
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_pop_sensing_time 
+        ON seoul_floating_population(sensing_time);
+    CREATE INDEX IF NOT EXISTS idx_pop_district 
+        ON seoul_floating_population(autonomous_district);
+    '''
+    print(sql)
+
+
 # ==============================================================================
-# DAG Definition
+# DAG Definition (Airflow 3.0+)
 # ==============================================================================
 default_args = {
     'owner': 'airflow',
@@ -271,7 +447,7 @@ with DAG(
     dag_id='seoul_population_collector',
     default_args=default_args,
     description='서울시 유동인구 IoT 데이터 수집 및 Supabase 적재',
-    schedule_interval='0 */6 * * *',  # 6시간마다 실행
+    schedule='0 */6 * * *',  # 6시간마다 실행 (Airflow 3.0+)
     start_date=datetime(2026, 1, 15),
     catchup=False,
     tags=['흑백요리사', '유동인구', 'IoT', 'Supabase'],
@@ -279,18 +455,21 @@ with DAG(
     
     start = EmptyOperator(task_id='start')
     
+    ensure_table = PythonOperator(
+        task_id='ensure_table_exists',
+        python_callable=ensure_table_exists,
+    )
+    
     collect_data = PythonOperator(
         task_id='collect_population_data',
         python_callable=collect_population_data,
-        provide_context=True,
     )
     
     load_supabase = PythonOperator(
         task_id='load_to_supabase',
         python_callable=load_to_supabase,
-        provide_context=True,
     )
     
     end = EmptyOperator(task_id='end')
     
-    start >> collect_data >> load_supabase >> end
+    start >> ensure_table >> collect_data >> load_supabase >> end

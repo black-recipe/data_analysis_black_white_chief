@@ -118,19 +118,18 @@ def create_animated_population_map(
             axis=1
         )
         
-        # 마커 레이어 추가 - 크고 뚜렷한 빨간 원형 마커
+        # 마커 레이어 추가 - 연한 회색 원형 마커
         fig.add_trace(go.Scattermapbox(
             lat=df_rest['lat'],
             lon=df_rest['lon'],
             mode='markers+text',
             marker=dict(
-                size=20,
-                color='#FF4500',  # 오렌지 레드
-                opacity=0.9,
-                symbol='circle'
+                size=10,
+                color='#cccccc',  # 연한 회색
+                opacity=0.9
             ),
             text=['★'] * len(df_rest),
-            textfont=dict(size=16, color='white'),
+            textfont=dict(size=12, color='white'),
             textposition='middle center',
             hovertext=df_rest['hover_text'],
             hoverinfo='text',
@@ -239,9 +238,9 @@ def create_static_choropleth(
             lat=df_rest['lat'],
             lon=df_rest['lon'],
             mode='markers+text',
-            marker=dict(size=20, color='#FF4500', opacity=0.9, symbol='circle'),
+            marker=dict(size=10, color='#cccccc', opacity=0.9),
             text=['★'] * len(df_rest),
-            textfont=dict(size=16, color='white'),
+            textfont=dict(size=12, color='white'),
             textposition='middle center',
             hovertext=df_rest['hover_text'],
             hoverinfo='text',
@@ -334,9 +333,9 @@ def create_broadcast_comparison_map(
             lat=df_rest['lat'],
             lon=df_rest['lon'],
             mode='markers+text',
-            marker=dict(size=20, color='#FF4500', opacity=0.9, symbol='circle'),
+            marker=dict(size=10, color='#cccccc', opacity=0.9),
             text=['★'] * len(df_rest),
-            textfont=dict(size=16, color='white'),
+            textfont=dict(size=12, color='white'),
             textposition='middle center',
             hovertext=df_rest['hover_text'],
             hoverinfo='text',

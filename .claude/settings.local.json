@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rev-parse:*)"
+    ]
+  }
+}
