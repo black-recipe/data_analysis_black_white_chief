@@ -181,8 +181,6 @@ def load_survival_data():
         return None
     df = pd.read_csv(file_path)
     df_clean = df[df['food'] != '-'].copy()
-    # 음식은 있는데 심사위원 정보가 없는 행 제외 (데이터 불일치 방지)
-    df_clean = df_clean[(df_clean['is_back'] == 1) | (df_clean['is_an'] == 1)]
     return df_clean
 
 @st.cache_data
