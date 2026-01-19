@@ -265,7 +265,7 @@ def create_pass_rate_summary(df, judge_col):
     return pd.DataFrame()
 
 def run_logistic_regression(df, target_col):
-    """로지스틱 회귀분석"""
+    """로지스틱 회귀분석 (이상치 제거 포함)"""
     if target_col == 'an':
         sub_df = df[df['is_an'] == 1].copy()
     else:
@@ -275,10 +275,30 @@ def run_logistic_regression(df, target_col):
     X = pd.get_dummies(sub_df[features], drop_first=True, dtype=int)
     X = sm.add_constant(X)
     y = sub_df[target_col]
+    
     try:
-        model = sm.Logit(y, X).fit(disp=0)
-        return model, X, y
-    except:
+        # 1차 모델 적합 (이상치 탐지용)
+        model_initial = sm.Logit(y, X).fit(disp=0, maxiter=100, method='bfgs')
+        
+        # Cook's distance를 이용한 이상치 탐지
+        influence = model_initial.get_influence()
+        cooks_d = influence.cooks_distance[0]
+        
+        # Cook's distance 임계값: 4/n (일반적 기준)
+        threshold = 4 / len(X)
+        outlier_mask = cooks_d > threshold
+        
+        # 이상치가 있으면 제거 후 재적합
+        if outlier_mask.sum() > 0:
+            X_clean = X[~outlier_mask]
+            y_clean = y[~outlier_mask]
+            model_final = sm.Logit(y_clean, X_clean).fit(disp=0, maxiter=100, method='bfgs')
+            return model_final, X_clean, y_clean
+        else:
+            return model_initial, X, y
+            
+    except Exception as e:
+        # 모델 적합 실패 시 None 반환
         return None, None, None
 
 def calculate_vif(X):
