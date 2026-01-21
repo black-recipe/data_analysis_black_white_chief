@@ -196,6 +196,35 @@ def get_daily_population_supabase(df_pop: pd.DataFrame) -> pd.DataFrame:
     return daily_pop
 
 
+
+def load_chef_survival_results_from_supabase() -> pd.DataFrame:
+    """Supabase에서 셰프 서바이벌 결과 데이터 로드"""
+    df = fetch_from_supabase("chef_survival_results")
+    
+    if df.empty:
+        return df
+        
+    return df
+
+
+def load_trend_data_from_supabase() -> pd.DataFrame:
+    """Supabase에서 셰프 트렌드 데이터 로드 (소스별 분할 조회)"""
+    # 한 번에 가져오면 limit에 걸릴 수 있으므로 소스별로 나누어 조회
+    all_data = []
+    
+    for source in ['google', 'youtube', 'datalab']:
+        # 각 소스별로 넉넉하게 limit 설정
+        df_source = fetch_from_supabase("chief_trend_value", filters={"소스": f"eq.{source}"}, limit=5000)
+        if not df_source.empty:
+            all_data.append(df_source)
+    
+    if not all_data:
+        # 데이터가 하나도 없을 경우 빈 DataFrame 반환 (컬럼 맞춰서)
+        return pd.DataFrame()
+        
+    return pd.concat(all_data, ignore_index=True)
+
+
 if __name__ == '__main__':
     print("=== Supabase 연결 테스트 ===")
     print(f"URL: {SUPABASE_URL[:30]}...")
