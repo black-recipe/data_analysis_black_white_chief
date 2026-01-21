@@ -18,7 +18,7 @@ from tqdm import tqdm
 # ==============================================================================
 
 # Configuration
-API_KEY = "776c43466c786f6f36326250756844"
+API_KEY = os.environ.get("API_KEY")
 SERVICE = "IotVdata018"
 BASE_URL = "http://openapi.seoul.go.kr:8088/{key}/json/{service}/{start}/{end}/"
 TARGET_START_DATE = datetime.datetime(2025, 12, 9) # Fallback if no file exists
