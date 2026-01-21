@@ -14,8 +14,8 @@ load_dotenv()
 
 # Supabase 설정 (Streamlit Secrets 우선, 없으면 .env 사용)
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    SUPABASE_URL = st.secrets['SUPABASE_DB']["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets['SUPABASE_DB']["SUPABASE_KEY"]
 except Exception:
     # 로컬에서 secrets.toml이 없거나 Streamlit 환경이 아닌 경우
     SUPABASE_URL = os.getenv("SUPABASE_URL", "")
